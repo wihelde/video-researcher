@@ -1,0 +1,10 @@
+{
+  "name": "video-researcher",
+  "private": true,
+  "scripts": {
+    "start": "./start.sh",
+    "dev": "bun run --watch src/server.ts",
+    "test": "bun test"
+  },
+  "type": "module"
+}
