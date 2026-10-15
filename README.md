@@ -9,7 +9,7 @@ The result is a research aid. The oldest date found is an **earliest plausible f
 Public individual posts or videos are supported from:
 
 - Reddit
-- X and Twitter
+- X / Twitter
 - Instagram
 - YouTube
 - Threads
@@ -36,11 +36,12 @@ Profiles, feeds, search pages, galleries, playlists, and private or login-protec
 ## Date rules
 
 - The submitted post receives its date from platform metadata. This date has high reliability.
-- Lens findings use only an absolute date visible in the German Lens result text, such as `17. Aug. 2026`.
-- Relative values such as `vor 2 Tagen` are not currently converted into dates. These findings remain visible but appear last as "Date unavailable."
-- An absolute Lens date has medium reliability.
+- Lens findings use dates visible in the German Lens result text, such as `17. Aug. 2026` or `vor 2 Tagen`. Absolute dates take precedence over relative dates.
+- Relative values in seconds, minutes, hours, days, weeks, months, or years are converted using the time the Lens results were read. Calendar calculations use the local timezone and account for daylight-saving changes, month ends, and leap years.
+- Converted dates participate in sorting and can be the earliest plausible finding. They are marked with `ca.` and retain the original relative label. These are estimates because Google may round relative ages.
+- An absolute Lens date has medium reliability. An estimated relative date has low reliability.
 - The oldest dated finding is marked as the earliest plausible finding.
-- When a dated Lens finding predates the submitted post, the tool shows a repost indication. This indication is not proof either.
+- When an absolute Lens date predates the submitted post, the tool shows a repost indication. Estimated dates alone do not trigger this indication. This indication is not proof either.
 - Instagram URLs containing `/reel/` or `/reels/` are normalized to `/p/` for display. The original Lens URL remains available as well.
 
 ## Requirements
@@ -91,7 +92,8 @@ The browser session is not restored permanently. Video Researcher does not expor
 
 - Research results are kept only in memory and disappear after a refresh or restart.
 - There is no database or research archive.
-- Runtime, Lens result counts, and error categories are logged to `.video-researcher.log` by default.
+- Runtime, Lens result counts, the number of converted relative dates, and error categories are logged to `.video-researcher.log` by default.
+- Before a new entry would exceed 5 MiB, the log rotates to `.video-researcher.log.1`, replacing the previous backup. Only the active log and one backup are retained, normally totaling at most 10 MiB. Custom log paths use the same `.1` backup suffix. Logging failures never interrupt research.
 - The researched thumbnail leaves the local machine and is sent to Google Lens.
 - Finding pages are not requested for additional date enrichment. The tool uses the visible Lens result text.
 
@@ -112,7 +114,7 @@ Optional environment variables:
 - Lens results are not guaranteed to be complete and may contain incorrect matches. The tool does not inspect the complete video content of each finding.
 - The first 30 findings deliberately represent only Google's highest-ranked individual results.
 - The search currently uses the submitted post's thumbnail rather than multiple frames from the full video.
-- A missing or relative date cannot be considered when determining the earliest plausible finding.
+- A missing or unsupported date cannot be considered when determining the earliest plausible finding. Relative dates are approximate, especially for months and years.
 - Only one research job can run at a time.
 - Private, deleted, login-protected, or age-restricted content cannot be researched reliably.
 

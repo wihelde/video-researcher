@@ -2,7 +2,7 @@ import type { LensMatch } from "./lens";
 import { parseSupportedPost, type SocialPost } from "./social-post";
 
 export type DateSource = "platform" | "lens";
-export type Reliability = "high" | "medium" | "not-evaluable";
+export type Reliability = "high" | "medium" | "low" | "not-evaluable";
 export type MatchKind = LensMatch["match"] | "submitted";
 export type FindingSource = "submitted" | "lens";
 
@@ -16,6 +16,7 @@ export type Finding = {
   publishedAtPrecision: "instant" | "date" | null;
   dateSource: DateSource | null;
   reliability: Reliability;
+  relativeDate?: string;
 };
 
 export type ResearchSummary = {
@@ -100,10 +101,12 @@ export const buildFindings = async (
       publishedAt: date?.value ?? null,
       publishedAtPrecision: date?.precision ?? null,
       dateSource: date ? "lens" : null,
-      reliability: date ? "medium" : "not-evaluable",
+      reliability: date ? (match.lensRelativeDate ? "low" : "medium") : "not-evaluable",
+      ...(date && match.lensRelativeDate ? { relativeDate: match.lensRelativeDate } : {}),
     };
     const previous = externalByUrl.get(finding.url);
-    if (!previous || (previous.publishedAt === null && finding.publishedAt !== null)) {
+    if (!previous || (previous.publishedAt === null && finding.publishedAt !== null) ||
+        (previous.relativeDate && finding.publishedAt && !finding.relativeDate)) {
       externalByUrl.set(finding.url, finding);
     }
   }
@@ -112,7 +115,8 @@ export const buildFindings = async (
   const deduplicated = new Map<string, Finding>();
   for (const finding of [submitted, ...external]) {
     const previous = deduplicated.get(finding.url);
-    if (!previous || (previous.publishedAt === null && finding.publishedAt !== null)) {
+    if (!previous || (previous.publishedAt === null && finding.publishedAt !== null) ||
+        (previous.relativeDate && finding.publishedAt && !finding.relativeDate)) {
       deduplicated.set(finding.url, finding);
     }
   }
@@ -124,20 +128,27 @@ export const buildFindings = async (
     (finding) => finding.source === "lens" && finding.publishedAt,
   );
   const earliestFinding = findings.find((finding) => finding.publishedAt) ?? null;
-  const confidence = datedExternal.length
+  const confidence = !earliestFinding?.relativeDate && datedExternal.some((finding) => finding.reliability === "medium")
     ? {
         level: "medium" as const,
         reason: "Mindestens eine vollständige Lens-Übereinstimmung enthält ein sichtbares Datum.",
       }
-    : {
-        level: "not-evaluable" as const,
-        reason: "Keine Lens-Fundstelle enthält ein sichtbares Datum.",
-      };
+    : datedExternal.length
+      ? {
+          level: "low" as const,
+          reason: earliestFinding?.relativeDate
+            ? "Das Datum des frühesten plausiblen Funds ist aus einer relativen Zeitangabe abgeleitet und nur geschätzt."
+            : "Die Lens-Datierungen sind aus relativen Zeitangaben abgeleitet und nur geschätzt.",
+        }
+      : {
+          level: "not-evaluable" as const,
+          reason: "Keine Lens-Fundstelle enthält ein sichtbares Datum.",
+        };
   const submittedTimestamp = submitted.publishedAt
     ? Date.parse(submitted.publishedAt)
     : Number.POSITIVE_INFINITY;
   const hasEarlier = datedExternal.some(
-    (finding) => comparable(finding) < submittedTimestamp,
+    (finding) => finding.reliability === "medium" && comparable(finding) < submittedTimestamp,
   );
 
   return {

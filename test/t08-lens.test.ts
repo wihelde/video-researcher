@@ -297,3 +297,57 @@ test("merges Lens matches into the normal finding list", async () => {
   expect(body.findings.find((finding: { title: string }) => finding.title === "Instagram Reel").source).toBe("lens");
   expect(body.lensMessage).toBeNull();
 });
+
+test("dates relative Lens findings once at observation, before redirects can cross midnight", async () => {
+  let clock = new Date(2026, 9, 15, 23, 59);
+  const result = await searchGoogleLens(
+    "https://preview.example/image.jpg",
+    async (args, stdin) => {
+      if (args[0] === "get") return "https://www.google.com/search?udm=48&vsint=full";
+      if (args[0] !== "eval") return "";
+      if (stdin?.includes("lens-exact-inactive")) return "lens-exact-active";
+      if (stdin?.includes("lens-cropped")) return "lens-full";
+      return JSON.stringify([
+        { url: "https://www.google.com/goto?url=first", title: "Instagram · vor 2 Tagen" },
+        { url: "https://www.youtube.com/shorts/example", title: "YouTube · vor 1 Tag" },
+      ]);
+    },
+    undefined,
+    async () => {
+      clock = new Date(2026, 9, 16, 0, 1);
+      return new Response(null, { status: 302, headers: { location: "https://www.instagram.com/p/example/" } });
+    },
+    () => clock,
+  );
+  expect(result.ok).toBe(true);
+  if (!result.ok) throw new Error(result.error.message);
+  expect(result.matches).toMatchObject([
+    { lensPublishedAt: "2026-10-13", lensRelativeDate: "vor 2 Tagen" },
+    { lensPublishedAt: "2026-10-14", lensRelativeDate: "vor 1 Tag" },
+  ]);
+});
+
+test("prefers absolute dates on duplicate Lens links without changing Google ranking", async () => {
+  const result = await searchGoogleLens(
+    "https://preview.example/image.jpg",
+    async (args, stdin) => {
+      if (args[0] === "get") return "https://www.google.com/search?udm=48&vsint=full";
+      if (args[0] !== "eval") return "";
+      if (stdin?.includes("lens-exact-inactive")) return "lens-exact-active";
+      if (stdin?.includes("lens-cropped")) return "lens-full";
+      return JSON.stringify([
+        { url: "https://www.instagram.com/p/example/", title: "Instagram · vor 2 Tagen" },
+        { url: "https://www.youtube.com/shorts/example", title: "YouTube · vor 1 Tag" },
+        { url: "https://www.instagram.com/p/example/", title: "Instagram · 12. Okt. 2026" },
+      ]);
+    },
+    undefined, undefined, () => new Date(2026, 9, 15, 12),
+  );
+  expect(result.ok).toBe(true);
+  if (!result.ok) throw new Error(result.error.message);
+  expect(result.matches.map(({ url }) => url)).toEqual([
+    "https://www.instagram.com/p/example/", "https://www.youtube.com/shorts/example",
+  ]);
+  expect(result.matches[0]).toMatchObject({ lensPublishedAt: "2026-10-12" });
+  expect(result.matches[0]).not.toHaveProperty("lensRelativeDate");
+});

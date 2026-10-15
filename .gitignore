@@ -1,6 +1,7 @@
 node_modules/
 .video-researcher-usage.json
 .video-researcher.log
+.video-researcher.log.*
 secrets/
 .env
 .envrc
