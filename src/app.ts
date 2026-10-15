@@ -245,6 +245,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
             event: "research_completed",
             durationMs: Math.round(performance.now() - startedAt),
             lensMatches,
+            lensRelativeDates: matches.filter((match) => match.lensRelativeDate).length,
             lensErrorCode,
           });
 

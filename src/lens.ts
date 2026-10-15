@@ -1,9 +1,12 @@
+import { parseLensDate } from "./lens-date";
+
 export type LensMatch = {
   url: string;
   title: string;
   match: "full";
   source: "lens";
   lensPublishedAt?: string;
+  lensRelativeDate?: string;
 };
 
 export type LensSearchResult =
@@ -164,28 +167,6 @@ const parseLinks = (output: string) => {
   }
 };
 
-const lensDate = (value: string) => {
-  const match = value.match(/\b(\d{1,2})\.\s*([A-Za-zÄÖÜäöüß]+)\.?\s+(\d{4})\b/);
-  if (!match) return null;
-  const months: Record<string, number> = {
-    jan: 1, januar: 1, feb: 2, februar: 2, mär: 3, märz: 3, mrz: 3,
-    apr: 4, april: 4, mai: 5, jun: 6, juni: 6, jul: 7, juli: 7,
-    aug: 8, august: 8, sep: 9, sept: 9, september: 9, okt: 10,
-    oktober: 10, nov: 11, november: 11, dez: 12, dezember: 12,
-  };
-  const day = Number(match[1]);
-  const month = months[match[2].toLocaleLowerCase("de-DE")];
-  const year = Number(match[3]);
-  if (!month) return null;
-  const date = new Date(Date.UTC(year, month - 1, day));
-  if (
-    date.getUTCFullYear() !== year ||
-    date.getUTCMonth() !== month - 1 ||
-    date.getUTCDate() !== day
-  ) return null;
-  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-};
-
 const prepareFullImageCorner = (type: string) => String.raw`(async () => {
   const selector = "input[type='range'][data-corner-type='${type}']";
   const isVisible = (element) => {
@@ -274,6 +255,7 @@ export const searchGoogleLens = async (
   run: BrowserCommandRunner = runBrowserCommand,
   reportAttention: LensAttentionReporter = () => {},
   fetcher: typeof fetch = fetch,
+  now: () => Date = () => new Date(),
 ): Promise<LensSearchResult> => {
   if (!Bun.which("agent-browser") && run === runBrowserCommand) {
     return {
@@ -302,7 +284,7 @@ export const searchGoogleLens = async (
     if (blocked(currentUrl) && !useVisibleSession) {
       reportAttention(true);
       useVisibleSession = true;
-      return searchGoogleLens(imageUrl, run, reportAttention, fetcher);
+      return searchGoogleLens(imageUrl, run, reportAttention, fetcher, now);
     }
 
     if (browserOptions?.headed && blocked(currentUrl)) {
@@ -382,8 +364,8 @@ export const searchGoogleLens = async (
     }
 
     const links = parseLinks(await run(["eval", "--stdin"], lensScript, browserOptions));
-    const seen = new Set<string>();
-    const matches: LensMatch[] = [];
+    const observedAt = now();
+    const matchesByUrl = new Map<string, LensMatch>();
     for (const link of links) {
       try {
         const resolvedUrl = isLensRedirectUrl(link.url)
@@ -396,20 +378,26 @@ export const searchGoogleLens = async (
           url.searchParams.delete(key);
         }
         const normalized = url.toString();
-        if (!isLensPlatformUrl(normalized) || normalized === imageUrl || seen.has(normalized)) continue;
-        seen.add(normalized);
-        const publishedAt = lensDate(link.title ?? "");
-        matches.push({
+        if (!isLensPlatformUrl(normalized) || normalized === imageUrl) continue;
+        const date = parseLensDate(link.title ?? "", observedAt);
+        const match: LensMatch = {
           url: normalized,
           title: link.title?.trim() || "Google-Lens-Fundstelle",
           match: "full",
           source: "lens",
-          ...(publishedAt ? { lensPublishedAt: publishedAt } : {}),
-        });
+          ...(date ? { lensPublishedAt: date.value } : {}),
+          ...(date?.relativeText ? { lensRelativeDate: date.relativeText } : {}),
+        };
+        const previous = matchesByUrl.get(normalized);
+        if (!previous || (!previous.lensPublishedAt && match.lensPublishedAt) ||
+            (previous.lensRelativeDate && match.lensPublishedAt && !match.lensRelativeDate)) {
+          matchesByUrl.set(normalized, match);
+        }
       } catch {
         // Ignore malformed links from the rendered result page.
       }
     }
+    const matches = [...matchesByUrl.values()];
     if (!matches.length) {
       if (blocked(currentUrl)) {
         return {

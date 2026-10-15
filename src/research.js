@@ -13,7 +13,7 @@ const contentLabels = {
   youtube: "YouTube-Video", threads: "Threads-Post", tiktok: "TikTok-Video",
   snapchat: "Snapchat-Video", facebook: "Facebook-Post",
 };
-const reliabilityLabels = { high: "Hoch", medium: "Mittel", "not-evaluable": "Nicht bewertbar" };
+const reliabilityLabels = { high: "Hoch", medium: "Mittel", low: "Gering", "not-evaluable": "Nicht bewertbar" };
 const dateSourceLabels = { platform: "Plattformdaten", lens: "Google Lens" };
 let activeRun = null;
 let lastUrl = "";
@@ -50,12 +50,18 @@ function dateLabel(value, precision = "date") {
 }
 
 function dateElement(finding, className) {
-  const node = element(finding.publishedAt ? "time" : "span", dateLabel(finding.publishedAt, finding.publishedAtPrecision), className);
+  const label = dateLabel(finding.publishedAt, finding.publishedAtPrecision);
+  const node = element(finding.publishedAt ? "time" : "span", finding.relativeDate ? "ca. " + label : label, className);
   if (finding.publishedAt) {
     node.dateTime = finding.publishedAt;
-    node.title = finding.publishedAt;
+    node.title = finding.relativeDate ? finding.publishedAt + " (" + finding.relativeDate + ")" : finding.publishedAt;
   }
   return node;
+}
+
+function dateSourceLabel(finding) {
+  const source = dateSourceLabels[finding.dateSource] ?? "Unbekannt";
+  return finding.relativeDate ? source + " · " + finding.relativeDate : source;
 }
 
 function makeCopyButton(url, label) {
@@ -94,7 +100,7 @@ function renderFindings(body) {
   if (body.earliestFinding) {
     earliest.append(dateElement(body.earliestFinding, "summary-date"));
     earliest.append(externalLink(body.earliestFinding.url, body.earliestFinding.title, "summary-link"));
-    earliest.append(element("p", "Datumsquelle: " + (dateSourceLabels[body.earliestFinding.dateSource] ?? "Unbekannt"), "summary-note"));
+    earliest.append(element("p", "Datumsquelle: " + dateSourceLabel(body.earliestFinding), "summary-note"));
   } else {
     earliest.append(element("p", "Kein datierter Fund", "submitted-title"));
   }
@@ -165,7 +171,7 @@ function renderFindings(body) {
     }
     const date = element("td");
     date.append(dateElement(finding));
-    date.append(element("span", finding.dateSource ? "Quelle: " + (dateSourceLabels[finding.dateSource] ?? finding.dateSource) : "Keine Datumsquelle", "cell-detail"));
+    date.append(element("span", finding.dateSource ? "Quelle: " + dateSourceLabel(finding) : "Keine Datumsquelle", "cell-detail"));
     const match = element("td", finding.match === "submitted" ? "Eingereichter Post" : "Vollständige Bildübereinstimmung");
     const reliability = element("td", reliabilityLabels[finding.reliability] ?? "Nicht bewertbar");
     const actions = element("td");

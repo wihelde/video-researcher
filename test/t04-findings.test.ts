@@ -92,3 +92,38 @@ test("renders safe links, clipboard actions and Lens-only labels", async () => {
   expect(html).toContain("Google Lens übertragen");
   expect(html).not.toContain("Cloud Vision");
 });
+
+test("uses estimated dates for chronology while keeping their uncertainty visible", async () => {
+  const summary = await buildFindings(post, [
+    { url: "https://www.youtube.com/shorts/dated", title: "YouTube · vor 2 Tagen", match: "full", source: "lens", lensPublishedAt: "2026-08-08", lensRelativeDate: "vor 2 Tagen" },
+    { url: "https://www.youtube.com/shorts/undated", title: "YouTube", match: "full", source: "lens" },
+  ]);
+  expect(summary.findings.map(({ url }) => url)).toEqual([
+    "https://www.youtube.com/shorts/dated", post.url, "https://www.youtube.com/shorts/undated",
+  ]);
+  expect(summary.earliestFinding).toMatchObject({
+    publishedAt: "2026-08-08", publishedAtPrecision: "date", dateSource: "lens", reliability: "low", relativeDate: "vor 2 Tagen",
+  });
+  expect(summary.confidence.level).toBe("low");
+  expect(summary.repostHint).toBeNull();
+});
+
+test("prefers an absolute date when normalized URLs identify the same finding", async () => {
+  const summary = await buildFindings(post, [
+    { url: "https://www.instagram.com/reel/example/", title: "Estimated", match: "full", source: "lens", lensPublishedAt: "2026-08-01", lensRelativeDate: "vor 1 Woche" },
+    { url: "https://www.instagram.com/p/example/", title: "Absolute", match: "full", source: "lens", lensPublishedAt: "2026-08-09" },
+  ]);
+  expect(summary.findings).toHaveLength(2);
+  expect(summary.earliestFinding).toMatchObject({ title: "Absolute", publishedAt: "2026-08-09", reliability: "medium" });
+  expect(summary.earliestFinding).not.toHaveProperty("relativeDate");
+});
+
+test("does not overstate confidence in an estimated earliest finding when other dates are absolute", async () => {
+  const summary = await buildFindings(post, [
+    { url: "https://www.youtube.com/shorts/estimated", title: "Estimated", match: "full", source: "lens", lensPublishedAt: "2026-08-01", lensRelativeDate: "vor 1 Woche" },
+    { url: "https://www.youtube.com/shorts/absolute", title: "Absolute", match: "full", source: "lens", lensPublishedAt: "2026-08-09" },
+  ]);
+  expect(summary.earliestFinding?.title).toBe("Estimated");
+  expect(summary.confidence.level).toBe("low");
+  expect(summary.repostHint).toBeTruthy();
+});
