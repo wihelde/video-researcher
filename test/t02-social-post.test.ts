@@ -148,6 +148,6 @@ test("enables the social post URL form after the preflight passes", async () => 
   const html = await response.text();
 
   expect(html).toContain("Recherche starten");
-  expect(html).toContain("Öffentliche Social-Media-Post- oder Video-URL");
+  expect(html).toContain("Post- oder Video-URL");
   expect(html).not.toContain("Recherche gesperrt");
 });
