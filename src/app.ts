@@ -71,7 +71,7 @@ type ResearchPhase = "video" | "lens";
 type ActiveResearch = {
   cancelled: boolean;
   phase: ResearchPhase;
-  attention?: "captcha";
+  attention?: "captcha" | "verification";
 };
 
 export const createApp = (dependencies: AppDependencies = {}) => {
@@ -217,7 +217,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
           let lens: LensSearchResult;
           try {
             lens = await searchLens(extraction.post.thumbnailUrl, (required) => {
-              job.attention = required ? "captcha" : undefined;
+              job.attention = required === "verification" ? "verification" : required ? "captcha" : undefined;
             });
           } catch (error) {
             lens = {
@@ -233,6 +233,10 @@ export const createApp = (dependencies: AppDependencies = {}) => {
           const matches = lens.ok ? lens.matches : [];
           if (lens.ok) {
             lensMatches = lens.matches.length;
+            if (lens.warning) {
+              lensErrorCode = lens.warning.code;
+              lensMessage = lens.warning.message;
+            }
           } else {
             lensErrorCode = lens.error.code;
             lensMessage = lens.error.message;

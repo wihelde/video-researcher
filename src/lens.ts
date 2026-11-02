@@ -1,4 +1,6 @@
 import { parseLensDate } from "./lens-date";
+import { findingUrl } from "./findings";
+import { parseSupportedPost } from "./social-post";
 
 export type LensMatch = {
   url: string;
@@ -10,7 +12,7 @@ export type LensMatch = {
 };
 
 export type LensSearchResult =
-  | { ok: true; matches: LensMatch[] }
+  | { ok: true; matches: LensMatch[]; warning?: { code: string; message: string } }
   | { ok: false; error: { code: string; message: string } };
 
 export type BrowserCommandRunner = (
@@ -19,7 +21,7 @@ export type BrowserCommandRunner = (
   options?: { headed?: boolean; session?: string },
 ) => Promise<string>;
 
-export type LensAttentionReporter = (required: boolean) => void;
+export type LensAttentionReporter = (required: boolean | "verification") => void;
 
 const session = () =>
   process.env.VIDEO_RESEARCHER_LENS_SESSION?.trim() || "video-researcher-lens";
@@ -89,6 +91,49 @@ const isLensRedirectUrl = (value: string) => {
   } catch {
     return false;
   }
+};
+
+/** Follows Google's timed verification refreshes without requesting finding pages. */
+const resolveLensRedirect = async (
+  value: string,
+  fetcher: typeof fetch,
+  wait: (milliseconds: number) => Promise<void>,
+): Promise<string | null> => {
+  let current = value;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    let response: Response;
+    try {
+      response = await fetcher(current, { redirect: "manual", signal: AbortSignal.timeout(8_000) });
+    } catch {
+      return null;
+    }
+    const location = response.headers.get("location");
+    if (response.status >= 300 && response.status < 400 && location) {
+      const target = new URL(location, current);
+      if (!isLensRedirectUrl(target.toString())) {
+        return target.hostname === "google.com" || target.hostname.endsWith(".google.com") ? null : target.toString();
+      }
+      if (target.protocol !== "https:" || target.origin !== new URL(current).origin) return null;
+      current = target.toString();
+      continue;
+    }
+    if (response.status !== 200 || attempt === 2) return null;
+    const html = await response.text();
+    const refresh = [...html.matchAll(/<meta\b[^>]*>/gi)].find(([tag]) =>
+      /\bhttp-equiv\s*=\s*(["'])refresh\1/i.test(tag),
+    )?.[0];
+    const content = refresh?.match(/\bcontent\s*=\s*(["'])(.*?)\1/i)?.[2];
+    const parts = content?.match(/^\s*(\d+(?:\.\d+)?)\s*;\s*url\s*=\s*(.+?)\s*$/i);
+    if (!parts) return null;
+    const delay = Math.ceil(Number(parts[1]) * 1000);
+    const target = new URL(parts[2].replace(/^(["'])(.*)\1$/, "$2").replace(/&amp;|&#38;|&#x26;/gi, "&"), current);
+    if (target.protocol !== "https:" || target.origin !== new URL(current).origin ||
+        !isLensRedirectUrl(target.toString()) || target.username || target.password ||
+        !Number.isFinite(delay) || delay > 90_000) return null;
+    await wait(delay);
+    current = target.toString();
+  }
+  return null;
 };
 
 const lensScript = String.raw`(async () => {
@@ -256,6 +301,7 @@ export const searchGoogleLens = async (
   reportAttention: LensAttentionReporter = () => {},
   fetcher: typeof fetch = fetch,
   now: () => Date = () => new Date(),
+  waitForVerification: (milliseconds: number) => Promise<unknown> = Bun.sleep,
 ): Promise<LensSearchResult> => {
   if (!Bun.which("agent-browser") && run === runBrowserCommand) {
     return {
@@ -284,7 +330,7 @@ export const searchGoogleLens = async (
     if (blocked(currentUrl) && !useVisibleSession) {
       reportAttention(true);
       useVisibleSession = true;
-      return searchGoogleLens(imageUrl, run, reportAttention, fetcher, now);
+      return searchGoogleLens(imageUrl, run, reportAttention, fetcher, now, waitForVerification);
     }
 
     if (browserOptions?.headed && blocked(currentUrl)) {
@@ -366,11 +412,27 @@ export const searchGoogleLens = async (
     const links = parseLinks(await run(["eval", "--stdin"], lensScript, browserOptions));
     const observedAt = now();
     const matchesByUrl = new Map<string, LensMatch>();
+    let unresolvedLinks = 0;
+    let verificationWaitMs = 0;
+    const wait = async (milliseconds: number) => {
+      if (verificationWaitMs + milliseconds > 90_000) throw new Error("Google verification wait limit reached");
+      verificationWaitMs += milliseconds;
+      reportAttention("verification");
+      try {
+        await waitForVerification(milliseconds);
+      } finally {
+        reportAttention(false);
+      }
+    };
     for (const link of links) {
       try {
         const resolvedUrl = isLensRedirectUrl(link.url)
-          ? (await fetcher(link.url, { redirect: "manual" })).headers.get("location") ?? link.url
+          ? await resolveLensRedirect(link.url, fetcher, wait)
           : link.url;
+        if (!resolvedUrl) {
+          unresolvedLinks += 1;
+          continue;
+        }
         const cleanedUrl = resolvedUrl.replace(/&(ved|usg|sa|source)=.*/i, "");
         const url = new URL(cleanedUrl);
         url.hash = "";
@@ -378,7 +440,7 @@ export const searchGoogleLens = async (
           url.searchParams.delete(key);
         }
         const normalized = url.toString();
-        if (!isLensPlatformUrl(normalized) || normalized === imageUrl) continue;
+        if (!isLensPlatformUrl(normalized) || normalized === imageUrl || !parseSupportedPost(normalized).ok) continue;
         const date = parseLensDate(link.title ?? "", observedAt);
         const match: LensMatch = {
           url: normalized,
@@ -388,16 +450,29 @@ export const searchGoogleLens = async (
           ...(date ? { lensPublishedAt: date.value } : {}),
           ...(date?.relativeText ? { lensRelativeDate: date.relativeText } : {}),
         };
-        const previous = matchesByUrl.get(normalized);
+        const key = findingUrl(normalized);
+        const previous = matchesByUrl.get(key);
         if (!previous || (!previous.lensPublishedAt && match.lensPublishedAt) ||
             (previous.lensRelativeDate && match.lensPublishedAt && !match.lensRelativeDate)) {
-          matchesByUrl.set(normalized, match);
+          matchesByUrl.set(key, match);
         }
+        if (matchesByUrl.size === 30) break;
       } catch {
-        // Ignore malformed links from the rendered result page.
+        // Retain successful findings, but report links that could not be resolved.
+        unresolvedLinks += 1;
       }
     }
     const matches = [...matchesByUrl.values()];
+    if (unresolvedLinks) {
+      return {
+        ok: true,
+        matches,
+        warning: {
+          code: "lens-links-incomplete",
+          message: `Unvollständige Recherche: ${unresolvedLinks} Google-Links konnten nicht aufgelöst werden. Google blockiert möglicherweise weiterhin den Zugriff. Bitte versuche es später erneut.`,
+        },
+      };
+    }
     if (!matches.length) {
       if (blocked(currentUrl)) {
         return {

@@ -88,6 +88,8 @@ Google may block automated Lens requests. In that case, the tool opens a visible
 
 The Lens browser session is not restored permanently. Video Researcher does not export or archive browser cookies.
 
+Google can also delay individual `/goto` result links with a timed verification page. Video Researcher respects the page's refresh delay and retries only Google URLs, with at most 90 seconds of verification waiting per research. Resolution stops once the first 30 supported, unique posts or videos are collected. Finding pages are not requested for this resolution. The interface reports automatic verification separately from a CAPTCHA. If links remain unresolved, successful findings stay visible with an explicit incomplete-research warning and a retry action; the log records `lens-links-incomplete` without URLs.
+
 ## Reddit access
 
 Reddit may block automated metadata requests even when the post opens in an incognito browser. Its extractor can report that authentication is required in this situation; that does not mean the post is private.

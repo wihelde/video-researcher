@@ -196,7 +196,9 @@ async function updatePhase(run) {
     const body = await response.json();
     if (activeRun !== run || run.cancelRequested || !body.active) return;
     if (body.attention) {
-      const label = "Google benötigt eine Bestätigung. Bitte das CAPTCHA im geöffneten Browserfenster lösen.";
+      const label = body.attention === "verification"
+        ? "Google prüft die Fundstellenlinks. Das kann etwa eine Minute dauern."
+        : "Google benötigt eine Bestätigung. Bitte das CAPTCHA im geöffneten Browserfenster lösen.";
       if (status.textContent !== label) setStatus(label);
     } else if (body.phase) {
       const label = phaseLabels[body.phase] ?? "Recherche läuft …";
@@ -247,7 +249,11 @@ async function runResearch(url) {
       return;
     }
     renderFindings(body);
-    setStatus("Recherche abgeschlossen. " + (body.findings?.length ?? 0) + " Fundstellen.");
+    if (body.lensMessage) {
+      showError(body.lensMessage, true);
+    } else {
+      setStatus("Recherche abgeschlossen. " + (body.findings?.length ?? 0) + " Fundstellen.");
+    }
   } catch {
     activeRun = null;
     showError("Die Recherche konnte nicht abgeschlossen werden.", true);
