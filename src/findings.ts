@@ -54,7 +54,7 @@ const canonicalUrl = (value: string) => {
   }
 };
 
-const findingUrl = (value: string) => {
+export const findingUrl = (value: string) => {
   const normalized = canonicalUrl(value);
   try {
     const url = new URL(normalized);

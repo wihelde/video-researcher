@@ -7,6 +7,7 @@ const cancel = document.querySelector("#cancel-research");
 const phaseLabels = {
   video: "Video erkennen …",
   lens: "Google Lens durchsuchen …",
+  verification: "Google prüft die Fundstellenlinks. Das kann etwa eine Minute dauern.",
 };
 const contentLabels = {
   reddit: "Reddit-Post", x: "X-Post", instagram: "Instagram-Post",
@@ -247,7 +248,11 @@ async function runResearch(url) {
       return;
     }
     renderFindings(body);
-    setStatus("Recherche abgeschlossen. " + (body.findings?.length ?? 0) + " Fundstellen.");
+    if (body.lensMessage) {
+      showError(body.lensMessage, true);
+    } else {
+      setStatus("Recherche abgeschlossen. " + (body.findings?.length ?? 0) + " Fundstellen.");
+    }
   } catch {
     activeRun = null;
     showError("Die Recherche konnte nicht abgeschlossen werden.", true);

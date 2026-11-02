@@ -230,7 +230,7 @@ const publishedAtFromValue = (value: string | null) => {
   return Number.isNaN(timestamp) ? null : new Date(timestamp).toISOString();
 };
 
-const runYtDlp = async (url: string) => {
+const runYtDlp = async (url: string, browser?: string) => {
   const process = Bun.spawn(
     [
       "yt-dlp",
@@ -239,6 +239,7 @@ const runYtDlp = async (url: string) => {
       "--no-download",
       "--no-playlist",
       "--no-warnings",
+      ...(browser ? ["--cookies-from-browser", browser] : []),
       url,
     ],
     { stdout: "pipe", stderr: "pipe" },
@@ -338,11 +339,34 @@ export const extractThreadsPost = async (
 
 type ParsedPost = { url: URL; platform: SourcePlatform };
 
-const extractWithYtDlp = async (parsed: ParsedPost): Promise<PostExtractionResult> => {
-  const { info, stderr, exitCode } = await runYtDlp(parsed.url.toString());
+const extractWithYtDlp = async (parsed: ParsedPost, run = runYtDlp): Promise<PostExtractionResult> => {
+  const browser = parsed.platform === "reddit"
+    ? process.env.VIDEO_RESEARCHER_REDDIT_BROWSER?.trim() || undefined
+    : undefined;
+  const { info, stderr, exitCode } = await run(parsed.url.toString(), browser);
 
   if (exitCode !== 0) {
-    const accessRequired = /login|sign in|private|age.?restrict/i.test(stderr);
+    if (browser && /cookies database|failed to decrypt|could not copy.*cookie|keyring|keychain/i.test(stderr)) {
+      return {
+        ok: false,
+        error: {
+          code: "browser-session-unavailable",
+          message: "Die eingerichtete Browsersitzung für Reddit konnte nicht gelesen werden. Prüfe Browserprofil und Zugriffsrechte und versuche es erneut.",
+        },
+      };
+    }
+    const accessRequired = /login|sign in|authenticat|private|age.?restrict|HTTP Error (401|403)|unable to access the Reddit API/i.test(stderr);
+    if (parsed.platform === "reddit" && accessRequired) {
+      return {
+        ok: false,
+        error: {
+          code: "access-denied",
+          message: browser
+            ? "Reddit blockiert den automatischen Abruf weiterhin. Öffne den Post im eingerichteten Browser, prüfe dort deine Anmeldung oder eine Sicherheitsabfrage und versuche es erneut."
+            : "Reddit blockiert den automatischen Abruf. Richte eine Browsersitzung für Reddit ein und versuche es erneut.",
+        },
+      };
+    }
     const label = sourcePlatformLabel(parsed.platform);
     return {
       ok: false,
@@ -398,12 +422,12 @@ const extractWithYtDlp = async (parsed: ParsedPost): Promise<PostExtractionResul
   };
 };
 
-export const extractPost = async (value: string): Promise<PostExtractionResult> => {
+export const extractPost = async (value: string, run = runYtDlp): Promise<PostExtractionResult> => {
   const parsed = parseSupportedPost(value);
   if (!parsed.ok) {
     return { ok: false, error: { code: "invalid-url", message: parsed.message } };
   }
   return parsed.platform === "threads"
     ? extractThreadsPost(parsed.url.toString())
-    : extractWithYtDlp(parsed);
+    : extractWithYtDlp(parsed, run);
 };

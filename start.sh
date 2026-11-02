@@ -7,4 +7,9 @@ if ! command -v bun >/dev/null 2>&1; then
   exit 1
 fi
 
+# Also load local configuration when launched outside a direnv-enabled shell.
+if [ -f .envrc ]; then
+  . ./.envrc
+fi
+
 exec bun run src/server.ts

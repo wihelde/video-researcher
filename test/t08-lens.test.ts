@@ -227,9 +227,9 @@ test("rejects Lens results unless exact matches is confirmed", async () => {
   });
 });
 
-test("switches to the visible browser runner after a Lens CAPTCHA block", async () => {
+test("switches to a healthy visible browser without requesting CAPTCHA input", async () => {
   let visible = false;
-  const captchaStates: boolean[] = [];
+  const captchaStates: Array<boolean | "verification"> = [];
   const result = await searchGoogleLens(
     "https://preview.example/image.jpg",
     async (args, _stdin, options) => {
@@ -254,13 +254,35 @@ test("switches to the visible browser runner after a Lens CAPTCHA block", async 
   );
 
   expect(visible).toBe(true);
-  expect(captchaStates).toEqual([true, false]);
+  expect(captchaStates).toEqual([false]);
   expect(result).toEqual({
     ok: true,
     matches: [
       { url: "https://www.instagram.com/reels/DbELBaJoIUo/", title: "Instagram Reel", match: "full", source: "lens" },
     ],
   });
+});
+
+test("requests CAPTCHA input while the visible browser is blocked and clears it after solving", async () => {
+  const attention: Array<boolean | "verification"> = [];
+  let visibleReads = 0;
+  await searchGoogleLens(
+    "https://preview.example/image.jpg",
+    async (args, stdin, options) => {
+      if (args[0] === "get") {
+        if (!options?.headed || visibleReads++ === 0) return "https://www.google.com/sorry/index";
+        return "https://www.google.com/search?udm=48";
+      }
+      if (args[0] !== "eval") return "";
+      if (stdin?.includes("lens-exact-inactive")) return "lens-exact-active";
+      if (stdin?.includes("lens-full-ready")) return "lens-full-ready:10:10:1:1";
+      if (stdin?.includes("lens-cropped")) return "lens-full";
+      return "[]";
+    },
+    required => attention.push(required),
+  );
+
+  expect(attention).toEqual([true, false]);
 });
 
 test("merges Lens matches into the normal finding list", async () => {
