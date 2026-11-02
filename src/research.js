@@ -7,6 +7,7 @@ const cancel = document.querySelector("#cancel-research");
 const phaseLabels = {
   video: "Video erkennen …",
   lens: "Google Lens durchsuchen …",
+  verification: "Google prüft die Fundstellenlinks. Das kann etwa eine Minute dauern.",
 };
 const contentLabels = {
   reddit: "Reddit-Post", x: "X-Post", instagram: "Instagram-Post",
@@ -196,9 +197,7 @@ async function updatePhase(run) {
     const body = await response.json();
     if (activeRun !== run || run.cancelRequested || !body.active) return;
     if (body.attention) {
-      const label = body.attention === "verification"
-        ? "Google prüft die Fundstellenlinks. Das kann etwa eine Minute dauern."
-        : "Google benötigt eine Bestätigung. Bitte das CAPTCHA im geöffneten Browserfenster lösen.";
+      const label = "Google benötigt eine Bestätigung. Bitte das CAPTCHA im geöffneten Browserfenster lösen.";
       if (status.textContent !== label) setStatus(label);
     } else if (body.phase) {
       const label = phaseLabels[body.phase] ?? "Recherche läuft …";

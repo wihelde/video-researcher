@@ -67,11 +67,11 @@ const runPreflight = async (): Promise<PreflightResult> => {
 
 class ResearchCancelled extends Error {}
 
-type ResearchPhase = "video" | "lens";
+type ResearchPhase = "video" | "lens" | "verification";
 type ActiveResearch = {
   cancelled: boolean;
   phase: ResearchPhase;
-  attention?: "captcha" | "verification";
+  attention?: "captcha";
 };
 
 export const createApp = (dependencies: AppDependencies = {}) => {
@@ -217,7 +217,8 @@ export const createApp = (dependencies: AppDependencies = {}) => {
           let lens: LensSearchResult;
           try {
             lens = await searchLens(extraction.post.thumbnailUrl, (required) => {
-              job.attention = required === "verification" ? "verification" : required ? "captcha" : undefined;
+              job.attention = required === true ? "captcha" : undefined;
+              job.phase = required === "verification" ? "verification" : "lens";
             });
           } catch (error) {
             lens = {

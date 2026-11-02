@@ -119,7 +119,7 @@ test("shows automatic verification status and preserves partial findings and war
   });
   const request = app.fetch(new Request("http://localhost/api/research", {method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({url:links[0].url})}));
   await running;
-  expect(await (await app.fetch(new Request("http://localhost/api/research/status"))).json()).toEqual({active:true,phase:"lens",attention:"verification"});
+  expect(await (await app.fetch(new Request("http://localhost/api/research/status"))).json()).toEqual({active:true,phase:"verification"});
   release();
   const body = await (await request).json();
   expect(body.findings.some((f: { url: string }) => f.url === facebook)).toBe(true);

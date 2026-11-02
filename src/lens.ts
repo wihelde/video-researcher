@@ -328,7 +328,6 @@ export const searchGoogleLens = async (
       /google\.com\/sorry|consent\.google\.com|recaptcha/i.test(value);
 
     if (blocked(currentUrl) && !useVisibleSession) {
-      reportAttention(true);
       useVisibleSession = true;
       return searchGoogleLens(imageUrl, run, reportAttention, fetcher, now, waitForVerification);
     }
