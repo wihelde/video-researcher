@@ -86,7 +86,21 @@ bun test
 
 Google may block automated Lens requests. In that case, the tool opens a visible browser session where consent or a CAPTCHA must be confirmed manually once.
 
-The browser session is not restored permanently. Video Researcher does not export or archive browser cookies.
+The Lens browser session is not restored permanently. Video Researcher does not export or archive browser cookies.
+
+## Reddit access
+
+Reddit may block automated metadata requests even when the post opens in an incognito browser. Its extractor can report that authentication is required in this situation; that does not mean the post is private.
+
+To let `yt-dlp` use an existing browser session for Reddit, explicitly configure a browser in your local `.envrc`. For Brave on macOS:
+
+```sh
+export VIDEO_RESEARCHER_REDDIT_BROWSER="brave:$HOME/Library/Application Support/BraveSoftware/Brave-Browser/Default"
+```
+
+Use the profile where you open Reddit. The value follows [yt-dlp's `--cookies-from-browser` syntax](https://github.com/yt-dlp/yt-dlp#authentication-options); an explicit profile path avoids unreliable automatic profile discovery. Restart with `./start.sh` after changing the configuration. The start script loads `.envrc` directly; shells with direnv can also use `direnv allow`.
+
+This is opt-in and applies only to Reddit inputs. `yt-dlp` reads browser cookies locally and uses the cookies matching its requests, without exporting a cookie file. Video Researcher does not need or store your Reddit password. Browser profile or keychain access may require local permission. Without configuration, requests continue without browser cookies.
 
 ## Local data
 
@@ -104,6 +118,7 @@ Optional environment variables:
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `PORT` | `3000` | Local HTTP port |
+| `VIDEO_RESEARCHER_REDDIT_BROWSER` | unset | Opt-in browser/profile used by `yt-dlp` for Reddit requests |
 | `VIDEO_RESEARCHER_LENS_SESSION` | `video-researcher-lens` | Name of the headless browser session |
 | `VIDEO_RESEARCHER_LENS_VISIBLE_SESSION` | `video-researcher-visible` | Name of the visible browser session |
 | `VIDEO_RESEARCHER_LOG_FILE` | `.video-researcher.log` | Path to the local log file |
